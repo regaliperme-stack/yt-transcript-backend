@@ -1,0 +1,6 @@
+{
+  "name": "yt-transcript-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend serverless (Vercel) che recupera trascrizioni YouTube lato server per YT Deep Notes"
+}
