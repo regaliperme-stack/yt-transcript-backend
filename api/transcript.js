@@ -24,8 +24,8 @@ export default async function handler(req, res) {
 }
 
 async function fetchTranscript(videoId) {
-  // 1. Scarica la pagina pubblica del video: contiene l'elenco delle tracce
-  //    di sottotitoli/trascrizione che YouTube genera per ogni spettatore.
+  // 1. Scarica la pagina pubblica del video: contiene, incorporato in uno script,
+  //    l'oggetto ytInitialPlayerResponse con l'elenco delle tracce di sottotitoli.
   const pageResp = await fetch("https://www.youtube.com/watch?v=" + videoId + "&hl=it", {
     headers: {
       "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
@@ -38,17 +38,26 @@ async function fetchTranscript(videoId) {
   if (!pageResp.ok) throw new Error("Video non raggiungibile (" + pageResp.status + ")");
   const html = await pageResp.text();
 
-  // 2. Estrae il blob JSON "captionTracks" incorporato nella pagina.
-  const match = html.match(/"captionTracks":(\[.*?\])(?=,")/);
-  if (!match) throw new Error("Nessuna trascrizione/sottotitolo disponibile per questo video");
-
-  let tracks;
-  try {
-    tracks = JSON.parse(match[1].replace(/\\u0026/g, "&"));
-  } catch {
-    throw new Error("Formato tracce sottotitoli non riconosciuto");
+  if (!html.includes("ytInitialPlayerResponse")) {
+    throw new Error("YouTube ha risposto con una pagina inattesa (probabile blocco anti-bot temporaneo). Riprova tra qualche minuto.");
   }
-  if (!tracks.length) throw new Error("Nessuna traccia di sottotitoli trovata");
+
+  // 2. Estrae l'oggetto JSON ytInitialPlayerResponse contando le parentesi graffe,
+  //    molto più affidabile di un regex su un JSON minificato e annidato.
+  const jsonStr = extractBalancedJson(html, "ytInitialPlayerResponse");
+  if (!jsonStr) throw new Error("Impossibile leggere i dati del player della pagina");
+
+  let playerResponse;
+  try {
+    playerResponse = JSON.parse(jsonStr);
+  } catch {
+    throw new Error("Dati del player non interpretabili (formato inatteso)");
+  }
+
+  const tracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  if (!tracks || !tracks.length) {
+    throw new Error("Nessuna trascrizione/sottotitolo disponibile per questo video");
+  }
 
   // 3. Preferisce l'italiano; altrimenti la prima lingua disponibile.
   const track =
@@ -79,4 +88,33 @@ function decodeEntities(str) {
     .replace(/&quot;/g, '"')
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">");
+}
+
+// Trova "<marker> = {" (o "<marker>":{") nell'html e restituisce la stringa
+// dell'oggetto JSON completo, contando le graffe di apertura/chiusura e
+// ignorando quelle dentro le stringhe. Molto più robusto di un regex quando
+// il JSON contiene oggetti/array annidati come captionTracks.
+function extractBalancedJson(html, marker) {
+  const idx = html.indexOf(marker);
+  if (idx === -1) return null;
+  const braceStart = html.indexOf("{", idx);
+  if (braceStart === -1) return null;
+
+  let depth = 0, inString = false, escape = false;
+  for (let i = braceStart; i < html.length; i++) {
+    const ch = html[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === "\\") escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return html.slice(braceStart, i + 1);
+    }
+  }
+  return null;
 }
