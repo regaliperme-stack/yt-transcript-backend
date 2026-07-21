@@ -66,9 +66,17 @@ async function fetchTranscript(videoId) {
     tracks[0];
 
   // 4. Scarica il file XML della traccia scelta e lo converte in testo pulito.
-  const capResp = await fetch(track.baseUrl);
+  const capResp = await fetch(track.baseUrl, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Accept-Language": "it-IT,it;q=0.9,en;q=0.8"
+    }
+  });
   if (!capResp.ok) throw new Error("Download sottotitoli fallito (" + capResp.status + ")");
   const xml = await capResp.text();
+  if (!xml || xml.trim().length === 0) {
+    throw new Error("Il server dei sottotitoli ha risposto vuoto (probabile blocco anti-bot su questa seconda richiesta)");
+  }
 
   const text = Array.from(xml.matchAll(/<text[^>]*>([\s\S]*?)<\/text>/g))
     .map(m => decodeEntities(m[1]))
