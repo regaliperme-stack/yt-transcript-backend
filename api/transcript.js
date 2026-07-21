@@ -26,8 +26,14 @@ export default async function handler(req, res) {
 async function fetchTranscript(videoId) {
   // 1. Scarica la pagina pubblica del video: contiene l'elenco delle tracce
   //    di sottotitoli/trascrizione che YouTube genera per ogni spettatore.
-  const pageResp = await fetch("https://www.youtube.com/watch?v=" + videoId, {
-    headers: { "Accept-Language": "it-IT,it;q=0.9,en;q=0.8" }
+  const pageResp = await fetch("https://www.youtube.com/watch?v=" + videoId + "&hl=it", {
+    headers: {
+      "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+      // Senza questo cookie, YouTube mostra a molte richieste server-side europee
+      // una pagina di consenso cookie invece della pagina del video vera e propria.
+      "Cookie": "CONSENT=YES+1; PREF=hl=it",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    }
   });
   if (!pageResp.ok) throw new Error("Video non raggiungibile (" + pageResp.status + ")");
   const html = await pageResp.text();
